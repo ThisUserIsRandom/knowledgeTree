@@ -1,0 +1,102 @@
+# Frontend — Knowledge Tree (Flutter)
+
+Flutter client for Knowledge Tree AI. Renders a hierarchical knowledge tree,
+lets each node own a chat conversation, and connects to the Python gateway at
+`python-serv`.
+
+## Tech stack
+
+| Concern        | Choice |
+|----------------|--------|
+| UI             | Flutter 3 (SDK `^3.3.0`) |
+| State          | `flutter_riverpod` (Riverpod 2) |
+| Routing        | in-app router (`app.dart`); `go_router` is a dependency but not the primary router |
+| Tree layout    | `graphview` (`GraphView.builder` + `BuchheimWalkerAlgorithm`) |
+| Markdown       | `flutter_markdown` |
+| Fonts          | `google_fonts` |
+| Storage        | `shared_preferences`, `path_provider` |
+| HTTP/SSE       | `dart:io` `HttpClient` (raw SSE parsing) |
+
+## Project structure
+
+```
+lib/
+├── main.dart                      # entrypoint: ProviderScope → KnowledgeTreeApp
+├── app.dart                       # MaterialApp + connector/main-menu router
+├── core/
+│   ├── theme/                     # AppTheme, AppColors, typography
+│   └── utils/logger.dart
+├── features/
+│   ├── chat/                      # ChatMessage model, ChatPanel, MessageBubble
+│   ├── connector/                 # Provider "Connector" + Profiles screens
+│   │   ├── domain/ai_profile.dart
+│   │   ├── data/profile_store.dart, profile_provider.dart
+│   │   └── presentation/screens/{connector_screen,profiles_screen}.dart
+│   ├── knowledge_tree/            # THE tree
+│   │   ├── domain/models/{knowledge_node,tree_project}.dart
+│   │   └── presentation/
+│   │       ├── screens/knowledge_tree_screen.dart
+│   │       └── widgets/tree_view.dart
+│   ├── main_menu/                 # MainMenuScreen
+│   └── search/                    # SearchOverlay
+├── providers/                     # Riverpod notifiers / status providers
+│   ├── api_provider.dart
+│   ├── backend_status_provider.dart
+│   └── tree_project_provider.dart
+└── services/                      # persistence + network
+    ├── api_service.dart           # generic health + chat stream (HttpClient)
+    ├── chat_api_service.dart      # cancellable SSE chat stream + error types
+    ├── chat_storage.dart          # per-node chat history on disk
+    ├── tree_storage.dart          # tree projects persistence
+    ├── file_store.dart
+    ├── backend_config_service.dart
+    └── content_sanitizer.dart     # sanitize/encode request bodies
+```
+
+## Knowledge tree
+
+- **`TreeView`** (`features/knowledge_tree/presentation/widgets/tree_view.dart`)
+  builds a `graphview` `Graph` from `KnowledgeNode` roots and renders it with
+  `BuchheimWalkerAlgorithm` (top→bottom orientation). `graphview`'s built-in
+  `InteractiveViewer` handles pan + pinch-zoom; `autoZoomToFit` frames the tree
+  on first build and after every data change.
+- Each node card supports: tap title to **rename**, **add child**, **delete
+  node**, and **open chat** (opens `ChatPanel` for that node id).
+- The parent `KnowledgeTreeScreen` owns the chat overlay state
+  (`_chatNodeId`) and wires the node callbacks to the `TreeProjectsNotifier`
+  (add/delete/rename) and `ChatStorage` (delete chat history).
+
+## State management (Riverpod)
+
+- `treeProjectsProvider` → `TreeProjectsNotifier` (`providers/tree_project_provider.dart`)
+  holds the list of `TreeProject`s and mutates nodes (add child with fanned-out
+  child positions, delete, rename). All mutations persist via `TreeStorage`.
+- `backendStatusProvider` tracks gateway reachability.
+- `apiProvider` / connector profile providers drive the Connector flow and the
+  per-profile provider selection sent to `POST /v1/config/set`.
+
+## Connector & profiles
+
+- `ConnectorScreen` collects the upstream provider, base URL, API key and model,
+  persists them, and calls `POST /v1/config/set` so the backend re-routes.
+- `ProfilesScreen` + `AiProfile` / `ProfileStore` manage multiple saved
+  provider profiles (`features/connector/`).
+
+## Persistence
+
+- Tree projects & node chats are stored on disk (`tree_storage.dart`,
+  `chat_storage.dart`). Connector config is kept in `shared_preferences`
+  (key `model_name` gates whether the Connector shows on launch — see
+  `app.dart::_checkConfig`).
+
+## Build & run
+
+```bash
+cd knowledgetree
+flutter pub get
+flutter analyze      # should report no errors
+flutter run
+```
+
+The app boots into `ConnectorScreen` on first launch (no saved `model_name`),
+then into `MainMenuScreen` afterwards.

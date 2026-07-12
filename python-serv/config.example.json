@@ -1,0 +1,12 @@
+{
+  "_comment": "Copy to config.json and set api_key. api_type: ollama | openai | openai_compatible | openrouter | anthropic. For OpenRouter set base_url to https://openrouter.ai/api/v1 and api_type to openrouter (or openai_compatible). model_map remaps client model names -> upstream model names.",
+  "base_url": "https://openrouter.ai/api/v1",
+  "api_type": "openrouter",
+  "api_key": "sk-or-...",
+  "timeout": 120,
+  "default_model": "openai/gpt-4o-mini",
+  "model_map": {
+    "mini": "openai/gpt-4o-mini",
+    "pro": "openai/gpt-4o"
+  }
+}
