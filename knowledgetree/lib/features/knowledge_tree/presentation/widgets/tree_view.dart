@@ -4,6 +4,55 @@ import 'package:knowledgetree/core/theme/colors.dart';
 import 'package:knowledgetree/providers/tree_project_provider.dart';
 import '../../domain/models/knowledge_node.dart';
 
+/// Wraps [BuchheimWalkerAlgorithm] so each node can be shifted by a manual
+/// drag offset on top of the automatic tree layout. The overall tree shape is
+/// unchanged; only individual nodes move relative to their computed spot.
+///
+/// The expensive tree layout is computed once and cached; subsequent runs
+/// (every drag frame) just re-apply the cached base positions plus the current
+/// manual offsets, which keeps dragging light.
+class _DraggableBuchheimAlgorithm extends BuchheimWalkerAlgorithm {
+  final Map<String, Offset> dragOffsets;
+
+  final Map<String, Offset> _basePositions = {};
+  Size _cachedSize = Size.zero;
+
+  _DraggableBuchheimAlgorithm(
+    this.dragOffsets,
+    BuchheimWalkerConfiguration configuration,
+    EdgeRenderer renderer,
+  ) : super(configuration, renderer);
+
+  @override
+  Size run(Graph? graph, double shiftX, double shiftY) {
+    if (graph == null) return Size.zero;
+
+    final ids = graph.nodes.map((n) => n.key?.value).toList();
+    final needsRecompute = _basePositions.isEmpty ||
+        ids.length != _basePositions.length ||
+        !ids.every((id) => _basePositions.containsKey(id));
+
+    if (needsRecompute) {
+      _cachedSize = super.run(graph, shiftX, shiftY);
+      _basePositions.clear();
+      for (final node in graph.nodes) {
+        final id = node.key?.value as String?;
+        if (id != null) _basePositions[id] = node.position;
+      }
+    }
+
+    for (final node in graph.nodes) {
+      final id = node.key?.value as String?;
+      if (id == null) continue;
+      final base = _basePositions[id] ?? node.position;
+      final offset = dragOffsets[id];
+      node.position =
+          offset != null && offset != Offset.zero ? base + offset : base;
+    }
+    return _cachedSize;
+  }
+}
+
 class TreeView extends StatefulWidget {
   final List<KnowledgeNode> roots;
   final void Function(String) onAddChild;
@@ -41,6 +90,8 @@ class _TreeViewState extends State<TreeView> {
     ..subtreeSeparation = 70
     ..orientation = BuchheimWalkerConfiguration.ORIENTATION_TOP_BOTTOM;
   final GraphViewController _controller = GraphViewController();
+  final Map<String, Offset> _dragOffsets = {};
+  late final BuchheimWalkerAlgorithm _algorithm;
   final Paint _edgePaint = Paint()
     ..color = AppColors.nodeEdgeColor
     ..strokeWidth = 1.5
@@ -52,6 +103,11 @@ class _TreeViewState extends State<TreeView> {
   @override
   void initState() {
     super.initState();
+    _algorithm = _DraggableBuchheimAlgorithm(
+      _dragOffsets,
+      _config,
+      TreeEdgeRenderer(_config),
+    );
     _rebuildGraph();
   }
 
@@ -103,7 +159,7 @@ class _TreeViewState extends State<TreeView> {
       children: [
         GraphView.builder(
           graph: _graph,
-          algorithm: BuchheimWalkerAlgorithm(_config, TreeEdgeRenderer(_config)),
+          algorithm: _algorithm,
           controller: _controller,
           animated: true,
           centerGraph: true,
@@ -112,7 +168,15 @@ class _TreeViewState extends State<TreeView> {
             final id = node.key?.value as String?;
             final kn = id != null ? _nodeMap[id] : null;
             if (kn == null) return const SizedBox.shrink();
-            return _nodeCard(kn);
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanUpdate: (details) {
+                _dragOffsets[kn.id] =
+                    (_dragOffsets[kn.id] ?? Offset.zero) + details.delta;
+                _controller.forceRecalculation();
+              },
+              child: _nodeCard(kn),
+            );
           },
         ),
         Positioned(
