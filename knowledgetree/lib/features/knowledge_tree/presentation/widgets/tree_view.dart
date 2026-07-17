@@ -40,7 +40,9 @@ class _TreeViewState extends State<TreeView> {
     ..levelSeparation = 130
     ..subtreeSeparation = 70
     ..orientation = BuchheimWalkerConfiguration.ORIENTATION_TOP_BOTTOM;
-  final GraphViewController _controller = GraphViewController();
+  final TransformationController _transformationController =
+      TransformationController();
+  late final GraphViewController _controller;
   final Paint _edgePaint = Paint()
     ..color = AppColors.nodeEdgeColor
     ..strokeWidth = 1.5
@@ -52,6 +54,8 @@ class _TreeViewState extends State<TreeView> {
   @override
   void initState() {
     super.initState();
+    _controller = GraphViewController(
+        transformationController: _transformationController);
     _rebuildGraph();
   }
 
@@ -95,6 +99,27 @@ class _TreeViewState extends State<TreeView> {
     }
   }
 
+  /// Zooms the canvas in/out around the viewport center by [factor]
+  /// (e.g. 1.3 to zoom in, 1/1.3 to zoom out).
+  void _zoom(double factor) {
+    final renderBox = context.findRenderObject();
+    final size = renderBox is RenderBox ? renderBox.size : MediaQuery.of(context).size;
+    final center = Offset(size.width / 2, size.height / 2);
+    final current = _transformationController.value;
+    final scale = current.getMaxScaleOnAxis();
+    final newScale = (scale * factor).clamp(0.15, 5.0);
+    final actual = newScale / scale;
+    // Compose a proper scale-around-center transform (the * operator chains
+    // matrix multiplication; diagonal3Values/translationValues are geometric,
+    // unlike the low-level component-wise scaleByDouble/translateByDouble).
+    final zoomMatrix = Matrix4.translationValues(center.dx, center.dy, 0) *
+        Matrix4.diagonal3Values(actual, actual, 1.0) *
+        Matrix4.translationValues(-center.dx, -center.dy, 0);
+    _transformationController.value = zoomMatrix.multiplied(current);
+    // Ensure our subtree (and graphview's InteractiveViewer) rebuilds.
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.roots.isEmpty) return const SizedBox.shrink();
@@ -121,6 +146,28 @@ class _TreeViewState extends State<TreeView> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              FloatingActionButton.small(
+                heroTag: 'zoomIn',
+                onPressed: () => _zoom(1.2),
+                backgroundColor: AppColors.surfaceElevated,
+                foregroundColor: AppColors.textPrimary,
+                elevation: 4,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                tooltip: 'Zoom in',
+                child: const Icon(Icons.add, size: 18),
+              ),
+              const SizedBox(height: 8),
+              FloatingActionButton.small(
+                heroTag: 'zoomOut',
+                onPressed: () => _zoom(1 / 1.2),
+                backgroundColor: AppColors.surfaceElevated,
+                foregroundColor: AppColors.textPrimary,
+                elevation: 4,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                tooltip: 'Zoom out',
+                child: const Icon(Icons.remove, size: 18),
+              ),
+              const SizedBox(height: 8),
               FloatingActionButton.small(
                 heroTag: 'fit',
                 onPressed: () => _controller.zoomToFit(),
@@ -170,12 +217,18 @@ class _TreeViewState extends State<TreeView> {
         children: [
           GestureDetector(
             onTap: () => widget.onRename(node.id),
-            child: Text(
-              node.title,
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+            child: SizedBox(
+              width: 150,
+              child: Text(
+                node.title,
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                softWrap: true,
               ),
             ),
           ),
