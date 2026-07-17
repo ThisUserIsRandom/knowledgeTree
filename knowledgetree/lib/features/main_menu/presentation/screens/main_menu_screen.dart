@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:knowledgetree/core/theme/colors.dart';
 import 'package:knowledgetree/providers/tree_project_provider.dart';
+import 'package:knowledgetree/services/tree_transfer.dart';
 import 'package:knowledgetree/features/knowledge_tree/domain/models/tree_project.dart';
 import 'package:knowledgetree/features/knowledge_tree/domain/models/knowledge_node.dart';
 import 'package:knowledgetree/features/knowledge_tree/presentation/screens/knowledge_tree_screen.dart';
@@ -62,6 +63,9 @@ class MainMenuScreen extends ConsumerWidget {
             ],
           ),
           const Spacer(),
+          _iconButton(Icons.file_download_outlined, AppColors.textSecondary, () {
+            _showImportDialog(context, ref.read(treeProjectsProvider.notifier));
+          }),
           _iconButton(Icons.swap_horiz_rounded, AppColors.textSecondary, () {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const ProfilesScreen()),
@@ -250,6 +254,8 @@ class MainMenuScreen extends ConsumerWidget {
                 onSelected: (value) {
                   if (value == 'rename') {
                     _showRenameDialog(context, notifier, project);
+                  } else if (value == 'export') {
+                    _exportProject(context, project);
                   } else if (value == 'delete') {
                     _showDeleteDialog(context, notifier, project);
                   }
@@ -258,6 +264,11 @@ class MainMenuScreen extends ConsumerWidget {
                   PopupMenuItem(
                     value: 'rename',
                     child: Text('Rename',
+                        style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+                  ),
+                  PopupMenuItem(
+                    value: 'export',
+                    child: Text('Export',
                         style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
                   ),
                   PopupMenuItem(
@@ -412,6 +423,70 @@ class MainMenuScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _exportProject(BuildContext context, TreeProject project) async {
+    try {
+      final path = await TreeTransfer.exportProject(project);
+      if (!context.mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.surfaceCard,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: AppColors.border, width: 1),
+          ),
+          title: Text('Tree Exported',
+              style: TextStyle(
+                  color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Saved "${project.name}" as a single JSON file at:',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+              const SizedBox(height: 10),
+              SelectableText(path,
+                  style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 12,
+                      height: 1.4)),
+            ],
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Export failed: $e')),
+      );
+    }
+  }
+
+  Future<void> _showImportDialog(
+      BuildContext context, TreeProjectsNotifier notifier) async {
+    try {
+      final project = await TreeTransfer.importProject();
+      if (!context.mounted) return;
+      if (project == null) return; // user cancelled
+      notifier.importProject(project);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Imported "${project.name}"')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Import failed: $e')),
+      );
+    }
   }
 
   Widget _iconButton(IconData icon, Color color, VoidCallback onTap) {

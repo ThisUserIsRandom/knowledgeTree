@@ -70,6 +70,10 @@ class TreeProjectsNotifier extends Notifier<List<TreeProject>> {
     ];
   }
 
+  void importProject(TreeProject project) {
+    state = [...state, project];
+  }
+
   void deleteProject(String projectId) {
     state = state.where((p) => p.id != projectId).toList();
   }
@@ -343,7 +347,7 @@ class TreeProjectsNotifier extends Notifier<List<TreeProject>> {
     }).toList();
   }
 
-void applyAutoLayout(String projectId, Map<String, Offset> positions) {
+  void applyAutoLayout(String projectId, Map<String, Offset> positions) {
     state = state.map((p) {
       if (p.id == projectId) {
         return TreeProject(

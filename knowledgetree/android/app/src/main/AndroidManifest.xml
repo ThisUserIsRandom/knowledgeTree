@@ -1,8 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Needed only on Android 9 and below to write into the public Downloads
+         folder. Android 10+ uses scoped storage (MediaStore) with no permission. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
     <application
         android:label="knowledgetree"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- Disable Impeller: its OpenGLES backend renders an all-black screen
+             on x86 emulators. Skia works correctly there. -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
