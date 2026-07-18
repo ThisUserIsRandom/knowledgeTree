@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:knowledgetree/core/theme/colors.dart';
@@ -48,6 +49,7 @@ class _ProfilesScreenState extends ConsumerState<ProfilesScreen> {
     String provider = profile?.provider ?? 'OpenRouter';
 
     final isEditing = profile != null;
+    bool keyVisible = false;
 
     void submit(StateSetter setSt) async {
       final name = nameCtl.text.trim();
@@ -107,7 +109,64 @@ class _ProfilesScreenState extends ConsumerState<ProfilesScreen> {
                 const SizedBox(height: 14),
                 _field(apiCtl, 'Provider API URL (optional, e.g. https://openrouter.ai/api/v1)'),
                 const SizedBox(height: 14),
-                _field(keyCtl, 'API Key', obscure: true),
+                StatefulBuilder(
+                  builder: (c, setKey) => TextField(
+                    controller: keyCtl,
+                    obscureText: !keyVisible,
+                    style: TextStyle(color: AppColors.textPrimary),
+                    decoration: InputDecoration(
+                      hintText: 'API Key',
+                      hintStyle: TextStyle(color: AppColors.textTertiary),
+                      filled: true,
+                      fillColor: AppColors.surface,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: AppColors.border, width: 1.5),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: AppColors.border, width: 1.5),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              keyVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                              color: AppColors.textSecondary,
+                              size: 20,
+                            ),
+                            tooltip: keyVisible ? 'Hide API Key' : 'Show API Key',
+                            onPressed: () => setKey(() => keyVisible = !keyVisible),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.copy_outlined, color: AppColors.textSecondary, size: 20),
+                            tooltip: 'Copy API Key',
+                            onPressed: () async {
+                              if (keyCtl.text.trim().isEmpty) return;
+                              await Clipboard.setData(ClipboardData(text: keyCtl.text.trim()));
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Text('API Key copied to clipboard'),
+                                    backgroundColor: AppColors.success,
+                                    behavior: SnackBarBehavior.floating,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 14),
                 _field(modelCtl, 'Model Name (e.g. tencent/hy3:free)'),
               ],

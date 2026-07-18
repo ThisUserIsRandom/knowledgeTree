@@ -145,6 +145,78 @@ class _KnowledgeTreeScreenState extends ConsumerState<KnowledgeTreeScreen> {
     }
   }
 
+  Future<void> _confirmDelete(String nodeId) async {
+    final node = _findNode(
+      ref.read(activeProjectProvider)?.roots ?? [],
+      nodeId,
+    );
+    final title = node?.title ?? 'this node';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        bool checked = false;
+        return StatefulBuilder(
+          builder: (ctx, setState) => AlertDialog(
+            backgroundColor: AppColors.surfaceCard,
+            surfaceTintColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: const BorderSide(color: AppColors.border, width: 1),
+            ),
+            title: Text('Delete Node',
+                style: TextStyle(color: AppColors.urgent, fontWeight: FontWeight.w700)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Are you sure you want to delete "$title"? This action cannot be undone.',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Checkbox(
+                      value: checked,
+                      activeColor: AppColors.urgent,
+                      onChanged: (v) => setState(() => checked = v ?? false),
+                    ),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => checked = !checked),
+                        child: Text(
+                          'I understand, permanently delete this node',
+                          style: TextStyle(color: AppColors.textPrimary),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text('Cancel', style: TextStyle(color: AppColors.textTertiary)),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: checked ? AppColors.urgent : AppColors.surface,
+                  foregroundColor: checked ? Colors.white : AppColors.textTertiary,
+                ),
+                onPressed: checked ? () => Navigator.of(ctx).pop(true) : null,
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (confirmed == true) {
+      ref.read(treeProjectsProvider.notifier).deleteNode(widget.projectId, nodeId);
+    }
+  }
+
   KnowledgeNode? _findNode(List<KnowledgeNode> nodes, String id) {
     for (final n in nodes) {
       if (n.id == id) return n;
@@ -259,9 +331,7 @@ class _KnowledgeTreeScreenState extends ConsumerState<KnowledgeTreeScreen> {
         TreeView(
           roots: roots,
           onAddChild: _promptAddNode,
-          onDelete: (nodeId) => ref
-              .read(treeProjectsProvider.notifier)
-              .deleteNode(widget.projectId, nodeId),
+          onDelete: _confirmDelete,
           onDeleteChat: (nodeId) => ChatStorage.delete(nodeId),
           onOpenChat: _openChat,
           onRename: _promptRename,
