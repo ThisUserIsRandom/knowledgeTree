@@ -3,6 +3,6 @@
   "api_type": "openrouter",
   "api_key": "",
   "timeout": 120,
-  "default_model": "tencent/hy3:free",
+  "default_model": "openai/gpt-oss-20b:free",
   "model_map": {}
 }

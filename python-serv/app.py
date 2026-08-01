@@ -1,7 +1,7 @@
 import logging
 from flask import Flask, jsonify
 
-from routes import chat_bp, models_bp, config_bp
+from routes import chat_bp, models_bp, config_bp, rag_bp
 import config
 
 
@@ -11,6 +11,7 @@ def create_app() -> Flask:
     app.register_blueprint(chat_bp)
     app.register_blueprint(models_bp)
     app.register_blueprint(config_bp)
+    app.register_blueprint(rag_bp)
 
     @app.route("/health")
     def health():

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:knowledgetree/core/utils/backend_url.dart';
 
 /// Pushes the selected provider configuration to the python-serv backend so
 /// it can route requests to the correct upstream (ollama / openrouter / ...).
@@ -44,7 +45,8 @@ class BackendConfigService {
     try {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 5);
-      final request = await client.postUrl(Uri.parse('$baseUrl/v1/config/set'));
+      final request = await client
+          .postUrl(Uri.parse('${BackendUrl.resolve(baseUrl)}/v1/config/set'));
       request.headers.set('Content-Type', 'application/json');
       if (key.isNotEmpty) {
         request.headers.set('Authorization', 'Bearer $key');

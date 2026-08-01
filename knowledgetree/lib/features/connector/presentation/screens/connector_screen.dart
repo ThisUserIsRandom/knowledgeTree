@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:knowledgetree/core/theme/colors.dart';
+import 'package:knowledgetree/core/utils/backend_url.dart';
 import 'package:knowledgetree/services/backend_config_service.dart';
 import 'package:knowledgetree/features/connector/presentation/screens/profiles_screen.dart';
 import 'package:knowledgetree/features/connector/data/profile_provider.dart';
@@ -79,11 +80,7 @@ class _ConnectorScreenState extends ConsumerState<ConnectorScreen> {
   String? get _effectiveBaseUrl {
     final raw = _baseUrlController.text.trim();
     if (raw.isEmpty) return null;
-    var url = raw.endsWith('/') ? raw.substring(0, raw.length - 1) : raw;
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'http://$url';
-    }
-    return url;
+    return BackendUrl.resolve(raw);
   }
 
   /// Push the selected provider + credentials to the backend so it can route
@@ -411,7 +408,7 @@ class _ConnectorScreenState extends ConsumerState<ConnectorScreen> {
   Widget _buildModelField() {
     return TextFormField(
       controller: _modelController,
-      decoration: _inputDecoration('Model Name (e.g. tencent/hy3:free)'),
+      decoration: _inputDecoration('Model Name (e.g. openai/gpt-oss-20b:free)'),
       style: TextStyle(color: AppColors.textPrimary),
     );
   }

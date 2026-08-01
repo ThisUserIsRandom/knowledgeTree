@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:knowledgetree/core/utils/backend_url.dart';
 
 enum BackendStatus { checking, connected, disconnected }
 
@@ -17,7 +18,7 @@ class BackendConnectionNotifier extends Notifier<BackendStatus> {
   void _ping() async {
     _timer?.cancel();
     final prefs = await SharedPreferences.getInstance();
-    final url = prefs.getString('base_url') ?? '';
+    final url = BackendUrl.resolve(prefs.getString('base_url') ?? '');
     if (url.isEmpty) {
       state = BackendStatus.disconnected;
       _timer = Timer(const Duration(seconds: 15), _ping);

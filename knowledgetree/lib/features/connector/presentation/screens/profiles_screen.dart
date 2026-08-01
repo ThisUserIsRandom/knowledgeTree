@@ -168,7 +168,7 @@ class _ProfilesScreenState extends ConsumerState<ProfilesScreen> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                _field(modelCtl, 'Model Name (e.g. tencent/hy3:free)'),
+                _field(modelCtl, 'Model Name (e.g. openai/gpt-oss-20b:free)'),
               ],
             ),
           ),
