@@ -2,10 +2,12 @@ Flask==3.1.3
 langchain-core==1.4.9
 langchain-openai==1.3.5
 langgraph==1.2.9
-# Token counting is unused; the Rust `tiktoken`/`tiktoken_ext` (transitive deps
-# of langchain-openai) crash on Termux (ndk-context). Do NOT install them —
-# the pure-Python `./tiktoken` shim in this directory is used instead.
-#   pip uninstall -y tiktoken tiktoken_ext
+# The Rust builds `uuid-utils` and `tiktoken`/`tiktoken_ext` (transitive deps of
+# langchain-core / langchain-openai) link `ndk-context` and panic on Termux
+# ("android context not initialized"), aborting the server when LangGraph calls
+# uuid4 during /v1/rag/search. Do NOT install them — the pure-Python `./uuid_utils`
+# and `./tiktoken` shims in this directory are used instead.
+#   pip uninstall -y uuid-utils tiktoken tiktoken_ext
 
 # RAG (web search + retrieval). crawl4ai is optional — the pipeline falls back
 # to a stdlib HTML->text crawler when it (and its Playwright browsers) is absent.

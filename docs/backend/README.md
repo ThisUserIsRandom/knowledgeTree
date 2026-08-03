@@ -12,7 +12,8 @@ client can talk to. Built on LangChain + LangGraph.
 - **`dart:io` on the client** consumes the SSE stream; the server just emits
   OpenAI-style `data: {...}` chunks.
 
-> No `requirements.txt` is committed. Install manually:
+> `requirements.txt` is committed. Install it with `python-serv/setup.sh`
+> (see **Setup & running** below), or manually:
 > `pip install flask langchain-core langchain-openai langgraph`
 
 ## Project structure
@@ -35,6 +36,9 @@ python-serv/
 │   └── openai_compatible.py  # OpenAICompatibleProvider, OpenRouterProvider
 ├── graph/
 │   └── chat_graph.py    # LangGraph StateGraph + stream_chat / invoke_chat
+├── uuid_utils/          # pure-Python shim for the Rust uuid-utils (see Termux)
+│   └── compat/          # provides uuid7/uuid6 used by langchain-core
+├── tiktoken/            # pure-Python shim shadowing the Rust tiktoken
 └── utils.py             # message conversion, chunk extraction, SSE bridging
 ```
 
@@ -113,6 +117,29 @@ pip install flask langchain-core langchain-openai langgraph
 cp config.example.json config.json   # set api_key / base_url / api_type
 python main.py                       # http://0.0.0.0:8000
 ```
+
+> On a real Android phone use `python-serv/setup.sh` instead; it installs
+> straight from `requirements.txt` and applies the shims below automatically.
+
+### Running on the phone (Termux) — the RAG crash
+
+The Rust packages `uuid-utils` (pulled in by `langchain-core`/`langsmith`)
+and `tiktoken`/`tiktoken_ext` (by `langchain-openai`) link `ndk-context`. On
+Termux the first LLM call that goes through the RAG `graph.invoke` path
+(`POST /v1/rag/search`) calls `uuid4`/`uuid7`, which panics with
+`android context was not initialized` and **`abort()`s the whole server**.
+Plain `/v1/chat/completions` streams directly to the model and never touches it,
+so only RAG crashes.
+
+Fix, applied by `setup.sh` and kept in this repo:
+
+- `python-serv/uuid_utils/` — a pure-Python shim providing the `uuid_utils.compat.uuid7`
+  / `uuid4` API using the stdlib `uuid` + an RFC 9562 v6/v7 implementation.
+  `main.py` puts this directory first on `sys.path`, so it shadows the Rust one.
+- `python-serv/tiktoken/` — a pure-Python shim covering `tiktoken`'s import surface.
+- These Rust packages **must not be installed** on Termux:
+  `pip uninstall -y uuid-utils tiktoken tiktoken_ext`
+  (`setup.sh` does the tiktoken uninstall; `uuid-utils` is satisfiable via the shim).
 
 CORS is open (`Access-Control-Allow-Origin: *`) and `OPTIONS` preflight is
 handled, so the Flutter app can call the gateway from any origin in dev.

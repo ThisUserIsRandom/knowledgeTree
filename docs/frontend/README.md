@@ -100,3 +100,16 @@ flutter run
 
 The app boots into `ConnectorScreen` on first launch (no saved `model_name`),
 then into `MainMenuScreen` afterwards.
+
+## Talking to the gateway from a real device
+
+- `localhost` / `127.0.0.1` on a **physical** phone refers to the phone
+  itself — use the computer's **LAN IP** (e.g. `http://192.168.1.x:8000`) in the
+  Connector's base URL, and have the gateway bind `0.0.0.0`.
+- `10.0.2.2:8000` is the emulator-only alias for the host's loopback; it does
+  not work on a real device.
+- The gateway speaks plain HTTP, which Android blocks by default for apps
+  targeting API 28+. The main manifest therefore sets
+  `android:usesCleartextTraffic="true"` and declares the `INTERNET` permission
+  (formerly only present in the debug/profile manifests, which is why a release
+  build couldn't reach any server).

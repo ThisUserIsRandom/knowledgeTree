@@ -6,10 +6,14 @@
 #   installs the packages from requirements.txt.
 #
 #   The tricky dependency is `uuid-utils`: a Rust/maturin package pulled in
-#   transitively by langchain-core and langsmith. It has no prebuilt wheel for
-#   Android, so on Termux pip tries to compile it from source and usually
-#   fails (missing system linkers / outdated cargo toolchain). This script
-#   resolves it two ways, in order:
+#   transitively by langchain-core and langsmith (they call `uuid_utils.compat.uuid7`
+#   and LangGraph calls `uuid_utils.uuid4` during `graph.invoke`). It has no
+#   prebuilt wheel for Android. Building it on Termux is not just painful — the
+#   Rust `uuid` crate links `ndk-context`, so at RUNTIME (only once an LLM call
+#   goes through the RAG `graph.invoke` path, i.e. POST /v1/rag/search) it panics
+#   with "android context was not initialized" and `abort()`s the entire server.
+#   The /v1/chat streaming path never touches it, which is why only RAG crashes.
+#   This script avoids the native build entirely. It resolves it two ways, in order:
 #
 #   1) NATIVE BUILD — install the Rust toolchain first
 #        pkg update && pkg install rust clang binutils python -y
@@ -18,11 +22,19 @@
 #      (the script does this automatically on Termux when you pass
 #       ALLOW_RUST_INSTALL=1, or prompts when run interactively)
 #
-#   2) STD LIB BYPASS — no Rust required. If the native build still fails
-#      (or no toolchain is available), the script installs a fake
+#   2) STD LIB BYPASS — no Rust required. The script installs a fake
 #      `uuid-utils` distribution whose package is backed entirely by Python's
-#      built-in `uuid` module. pip then treats the dependency as satisfied
-#      and skips the native build; `import uuid_utils` still works.
+#      built-in `uuid` module (plus a tiny pure-Python RFC 9562 v6/v7
+#      implementation, since the stdlib has none). pip then treats the
+#      dependency as satisfied, no .so is ever built or loaded, and
+#      `import uuid_utils` / `from uuid_utils.compat import uuid7` still work.
+#
+#   The same `ndk-context` panic also applies to the Rust `tiktoken`/`tiktoken_ext`
+#   transitive deps of langchain-openai. They are not needed by this gateway
+#   (streaming goes straight to the HTTP API and token counts are unused), so
+#   they must NOT be installed. A small `./tiktoken` shim in the repo shadows
+#   them in case something imports them; `requirements.txt` and the install
+#   routine below uninstall them so the native Rust builds never ship to Termux.
 #
 #   `lxml` is the other build nightmare on Termux: python-docx depends on it,
 #   and pip would try to compile it from source against libxml2/libxslt. The
@@ -340,6 +352,12 @@ if ! "$VENV_PY" -m pip install -r "$REQ" 2>&1 | tee "$PIP_LOG"; then
     log "Re-running 'pip install -r $REQ' after uuid-utils resolution"
     "$VENV_PY" -m pip install -r "$REQ"
 fi
+
+# Remove the Rust `tiktoken`/`tiktoken_ext` transitive deps (they also link
+# ndk-context and would abort on Termux if ever imported). The repo's ./tiktoken
+# shim covers the import surface. NOTE: do NOT uninstall uuid-utils — on Termux
+# that package identity is already served by the pure-Python shim above.
+"$VENV_PY" -m pip uninstall -y tiktoken tiktoken_ext >/dev/null 2>&1 || true
 
 log "Verifying imports"
 "$VENV_PY" -c 'import flask, langchain_core, langgraph, lxml.etree, docx; print("langchain stack + lxml/docx imports OK")'
