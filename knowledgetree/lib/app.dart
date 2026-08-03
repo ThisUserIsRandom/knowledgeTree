@@ -39,6 +39,9 @@ class _AppRouterState extends State<_AppRouter>
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
+      // Start with the connector fully visible so a fresh install (no saved
+      // config) is not rendered at Opacity(0) and black.
+      value: 1.0,
     );
     _fadeAnimation =
         CurvedAnimation(parent: _animController, curve: Curves.easeInOut);
@@ -54,7 +57,12 @@ class _AppRouterState extends State<_AppRouter>
   Future<void> _checkConfig() async {
     final prefs = await SharedPreferences.getInstance();
     final hasConfig = prefs.getString('model_name') != null;
-    setState(() => _showConnector = !hasConfig);
+    setState(() {
+      _showConnector = !hasConfig;
+      // Align the fade so the decided screen is fully visible and the other
+      // is hidden, instead of relying on the initial value 0.
+      _animController.value = _showConnector ? 1.0 : 0.0;
+    });
   }
 
   void _onConnected() {

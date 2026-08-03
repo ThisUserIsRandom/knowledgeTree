@@ -3,10 +3,14 @@
          folder. Android 10+ uses scoped storage (MediaStore) with no permission. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
+    <!-- Required for all network access (HTTP calls to the AI backend).
+         Present in debug/profile manifests already; needed here for release. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="knowledgetree"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
         <!-- Disable Impeller: its OpenGLES backend renders an all-black screen
              on x86 emulators. Skia works correctly there. -->
         <meta-data

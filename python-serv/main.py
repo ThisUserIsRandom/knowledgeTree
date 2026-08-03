@@ -1,4 +1,15 @@
 import logging
+import os
+import sys
+
+# Make the pure-Python `tiktoken` shim in this directory shadow the Rust
+# `tiktoken` pulled in by langchain-openai. The Rust build links ndk-context and
+# panics ("android context was not initialized") under Termux, aborting the
+# server. Token counting is not used by this server, so a stdlib-only stand-in
+# is safe. This must run before anything imports langchain.
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _THIS_DIR not in sys.path:
+    sys.path.insert(0, _THIS_DIR)
 
 from app import create_app
 import config

@@ -212,8 +212,8 @@ install_rust_toolchain() {
         read -r ans
         [[ "$ans" =~ ^[Yy]$ ]] || return 1
     fi
-    log "Installing Rust + build tools (pkg update && pkg install rust clang binutils)"
-    pkg update && pkg install -y rust clang binutils
+    log "Installing Rust + build tools (pkg update && pkg install rust clang binutils cmake)"
+    pkg update && pkg install -y rust clang binutils cmake
 }
 
 # ---------------------------------------------------------------------------
@@ -250,8 +250,8 @@ install_lxml_termux() {
 # Last-resort from-source build for lxml (Termux apt unavailable / not visible).
 try_pip_build_lxml() {
     if is_termux; then
-        log "Installing lxml build deps (libxml2 libxslt pkg-config clang make)"
-        pkg install -y libxml2 libxslt pkg-config clang make || return 1
+        log "Installing lxml build deps (libxml2 libxslt pkg-config clang make cmake)"
+        pkg install -y libxml2 libxslt pkg-config clang make cmake || return 1
     fi
     log "Installing cython + wheel"
     "$VENV_PY" -m pip install --upgrade cython wheel
