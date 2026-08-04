@@ -1,17 +1,36 @@
 # knowledgetree
 
-A new Flutter project.
+Flutter client for **Knowledge Tree AI** — an interactive, hierarchical AI chat
+app. Knowledge is organized as a tree of nodes; each node owns its own chat
+conversation with an LLM, and the panel can run a **web search (RAG)** that
+searches the internet and answers from crawled pages.
 
-## Getting Started
+The app talks to the Python gateway in `../python-serv` (see
+[`docs/backend/README.md`](../docs/backend/README.md)); full frontend docs are
+in [`docs/frontend/README.md`](../docs/frontend/README.md).
 
-This project is a starting point for a Flutter application.
+## Quick start
 
-A few resources to get you started if this is your first Flutter project:
+```bash
+flutter pub get
+flutter run          # or: flutter run -d <device>
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+On first launch the app opens the **Connector** screen — configure the backend
+URL, API key and model there. Afterwards it opens the Main Menu → Knowledge Tree.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Tests
+
+```bash
+flutter analyze
+flutter test
+```
+
+## Layout
+
+- `lib/app.dart` — `MaterialApp` + connector/main-menu router.
+- `lib/features/knowledge_tree/` — `graphview`-based tree with per-node chat.
+- `lib/features/chat/` — chat panel, message bubbles, web-search animation,
+  notes and the question index.
+- `lib/features/connector/` — provider setup + saved profiles.
+- `lib/services/` — network (chat/RAG SSE) + persistence.

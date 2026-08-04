@@ -46,12 +46,37 @@ lib/
 └── services/                      # persistence + network
     ├── api_service.dart           # generic health + chat stream (HttpClient)
     ├── chat_api_service.dart      # cancellable SSE chat stream + error types
+    ├── rag_api_service.dart       # SSE RAG search (stages + final answer), upload, cancellable
     ├── chat_storage.dart          # per-node chat history on disk
     ├── tree_storage.dart          # tree projects persistence
     ├── file_store.dart
     ├── backend_config_service.dart
     └── content_sanitizer.dart     # sanitize/encode request bodies
 ```
+
+## Chat panel (per node)
+
+Opened via `buildChatSheet` (`chat_panel.dart`). It has a three-page layout
+(**Notes | Chat | Index**) and these message actions:
+
+- **Copy** — every message (user *and* assistant) shows a copy button
+  (`MessageBubble.onCopy`), so a user's question can be copied too.
+- **Delete** — removes a message (and its paired answer if deleting a question).
+- **Note** — assistant messages can carry a sticky note (`NoteEditor`).
+
+### Web search (RAG)
+
+The `travel_explore` icon runs `RagApiService.search` against
+`POST /v1/rag/search`. Stage events (`searching` / `crawling` / `indexing` /
+`retrieving` / `generating`) drive the animated **`WebSearchAnimation`** banner,
+and the final answer (with `Sources:` from the returned URL list) is appended as
+an assistant message.
+
+- **Stop search** — while a search is running, the send button becomes a red
+  **stop** control and the banner shows a **Stop search** button. Both call
+  `RagApiService.cancel()` (force-closes the SSE `HttpClient`), and the panel
+  recovers immediately without adding an error bubble.
+- `max_loops` is capped at 2 for faster worst-case feedback.
 
 ## Knowledge tree
 

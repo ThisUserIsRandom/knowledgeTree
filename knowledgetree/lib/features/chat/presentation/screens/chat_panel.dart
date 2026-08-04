@@ -6,7 +6,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:knowledgetree/core/theme/colors.dart';
 import 'package:knowledgetree/core/utils/backend_url.dart';
 import 'package:knowledgetree/features/chat/domain/models/chat_message.dart';
+import 'package:knowledgetree/features/chat/domain/models/chat_note.dart';
+import 'package:knowledgetree/features/chat/presentation/widgets/chat_index_view.dart';
+import 'package:knowledgetree/features/chat/presentation/widgets/chat_notes_view.dart';
 import 'package:knowledgetree/features/chat/presentation/widgets/message_bubble.dart';
+import 'package:knowledgetree/features/chat/presentation/widgets/note_editor.dart';
 import 'package:knowledgetree/features/chat/presentation/widgets/web_search_animation.dart';
 import 'package:knowledgetree/services/chat_api_service.dart';
 import 'package:knowledgetree/services/chat_storage.dart';
@@ -267,6 +271,18 @@ class _ChatPanelContentState extends State<_ChatPanelContent> {
   bool _streamFailed = false;
   String _streamBuffer = '';
 
+  // Three-page panel: [0] Notes | [1] Chat | [2] Index.
+  static const int _kPageNotes = 0;
+  static const int _kPageChat = 1;
+  static const int _kPageIndex = 2;
+  final PageController _pageController = PageController(initialPage: _kPageChat);
+  int _pageIndex = _kPageChat;
+
+  // Per-message keys so we can scroll to a specific question from the index.
+  final Map<String, GlobalKey> _messageKeys = {};
+  String? _highlightedId;
+  Timer? _highlightTimer;
+
   bool _ragSearching = false;
   String _ragStage = '';
   String _ragStageMessage = '';
@@ -284,6 +300,8 @@ class _ChatPanelContentState extends State<_ChatPanelContent> {
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();
+    _pageController.dispose();
+    _highlightTimer?.cancel();
     super.dispose();
   }
 
@@ -291,18 +309,25 @@ class _ChatPanelContentState extends State<_ChatPanelContent> {
     final raw = await ChatStorage.load(widget.nodeId);
     if (!mounted) return;
     setState(() {
-      _messages = raw.map((m) => ChatMessage(
-        id: '${m['role'] == 'user' ? 'usr' : 'asst'}_${DateTime.now().millisecondsSinceEpoch}',
-        role: m['role'] == 'user' ? MessageRole.user : MessageRole.assistant,
-        content: m['content'] ?? '',
-      )).toList();
+      _messages = raw.indexed.map((e) {
+        final m = e.$2;
+        final i = e.$1;
+        return ChatMessage(
+          id: '${m['role'] == 'user' ? 'usr' : 'asst'}_${DateTime.now().millisecondsSinceEpoch}_$i',
+          role: m['role'] == 'user' ? MessageRole.user : MessageRole.assistant,
+          content: m['content'] ?? '',
+          note: m['note'] is Map
+              ? ChatNote.fromJson(Map<String, dynamic>.from(m['note'] as Map))
+              : null,
+        );
+      }).toList();
     });
   }
 
   Future<void> _saveMessages() async {
     await ChatStorage.save(
       widget.nodeId,
-      _messages.map((m) => m.toApiMap()).toList(),
+      _messages.map((m) => m.toStoreMap()).toList(),
     );
   }
 
@@ -333,6 +358,72 @@ class _ChatPanelContentState extends State<_ChatPanelContent> {
       }
     });
     await _saveMessages();
+  }
+
+  /// Opens the note editor for the message at [index]. Applies save/remove and
+  /// persists. Notes stay local (never part of the request body).
+  Future<void> _openNoteEditorAt(int index) async {
+    if (index < 0 || index >= _messages.length) return;
+    final m = _messages[index];
+    final result = await NoteEditor.show(context, initial: m.note);
+    if (result == null || !mounted) return;
+
+    setState(() {
+      _messages[index] = result.removed
+          ? ChatMessage(
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              timestamp: m.timestamp,
+            )
+          : m.copyWith(note: result.note);
+    });
+    await _saveMessages();
+    if (mounted && _pageIndex == _kPageChat) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _messageKeys[m.id]?.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(
+            ctx,
+            alignment: 0.1,
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+          );
+        }
+      });
+    }
+  }
+
+  /// Jumps the chat to the question at [index]: flips to the Chat page and
+  /// scrolls the target message into view, briefly highlighting it.
+  Future<void> _jumpToQuestion(int index) async {
+    if (index < 0 || index >= _messages.length) return;
+    if (_pageIndex != _kPageChat) {
+      await _pageController.animateToPage(
+        _kPageChat,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    }
+    if (!mounted) return;
+
+    final targetId = _messages[index].id;
+    setState(() => _highlightedId = targetId);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _messageKeys[targetId]?.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.2,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
+    _highlightTimer?.cancel();
+    _highlightTimer = Timer(const Duration(milliseconds: 1800), () {
+      if (mounted) setState(() => _highlightedId = null);
+    });
   }
 
   Future<void> _sendMessage() async {
@@ -432,6 +523,10 @@ class _ChatPanelContentState extends State<_ChatPanelContent> {
 
   void _pauseGeneration() {
     _apiService.cancel();
+    _ragApiService.cancel();
+    if (_ragSearching && mounted) {
+      setState(() => _ragSearching = false);
+    }
   }
 
   String _normalizeBaseUrl(String raw) {
@@ -506,13 +601,17 @@ class _ChatPanelContentState extends State<_ChatPanelContent> {
     });
 
     if (result.error != null && result.error!.isNotEmpty) {
-      setState(() {
-        _messages.add(ChatMessage(
-          id: 'asst_${DateTime.now().millisecondsSinceEpoch}',
-          role: MessageRole.assistant,
-          content: 'Error: ${result.error}',
-        ));
-      });
+      if (result.error != 'Search stopped') {
+        setState(() {
+          _messages.add(ChatMessage(
+            id: 'asst_${DateTime.now().millisecondsSinceEpoch}',
+            role: MessageRole.assistant,
+            content: 'Error: ${result.error}',
+          ));
+        });
+      } else {
+        _showSnack('Search stopped');
+      }
     } else {
       var answer = result.response ?? 'No answer generated.';
       if (_ragSources.isNotEmpty) {
@@ -651,85 +750,39 @@ class _ChatPanelContentState extends State<_ChatPanelContent> {
   Widget build(BuildContext context) {
     return Column(
       children: [
+        _buildSegmentedControl(),
         Expanded(
-          child: _messages.isEmpty
-              ? SingleChildScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryContainer,
-                            borderRadius: BorderRadius.circular(32),
-                          ),
-                          child: Icon(Icons.chat_bubble_outline, color: AppColors.primary, size: 32),
-                        ),
-                        const SizedBox(height: 16),
-                        Text('Ask anything about this node',
-                            style: TextStyle(color: AppColors.textTertiary, fontSize: 15)),
-                        const SizedBox(height: 6),
-                        Text('Start a conversation with AI',
-                            style: TextStyle(color: AppColors.textQuaternary, fontSize: 13)),
-                      ],
-                    ),
-                  ),
-                )
-              : ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.only(top: 8, bottom: 8),
-                  itemCount: _messages.length +
-                      (_isLoading ? 1 : 0) +
-                      (_ragSearching ? 1 : 0),
-                  itemBuilder: (context, index) {
-                    if (index == _messages.length && _ragSearching) {
-                      return WebSearchAnimation(
-                        query: _ragQuery,
-                        stage: _ragStage,
-                        message: _ragStageMessage,
-                        attempt: _ragAttempt,
-                      );
-                    }
-                    if (index >= _messages.length) {
-                      return Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Center(
-                          child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-                    return MessageBubble(
-                      message: _messages[index],
-                      isStreaming: _isStreaming &&
-                          index == _messages.length - 1 &&
-                          _messages[index].role == MessageRole.assistant,
-                      onCopy: _messages[index].role == MessageRole.assistant
-                          ? () => _copyMessage(_messages[index].content)
-                          : null,
-                      onDelete: () => _deleteMessage(index),
-                    );
-                  },
-                ),
+          child: PageView(
+            controller: _pageController,
+            onPageChanged: (i) => setState(() => _pageIndex = i),
+            children: [
+              ChatNotesView(messages: _messages, onEdit: _openNoteEditorFor),
+              _buildChatPage(),
+              ChatIndexView(
+                messages: _messages,
+                onSelect: _jumpToQuestion,
+                highlightedIndex: _highlightedIndex,
+              ),
+            ],
+          ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildChatPage() {
+    return Column(
+      children: [
+        Expanded(child: _buildChatList()),
         Container(
           padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).padding.bottom + 8),
+              bottom: MediaQuery.of(context).padding.bottom + 4),
           decoration: BoxDecoration(
             color: AppColors.surfaceCard,
             border: Border(top: BorderSide(color: AppColors.border, width: 1)),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               children: [
                 _inputIconBtn(
@@ -779,11 +832,13 @@ class _ChatPanelContentState extends State<_ChatPanelContent> {
                 const SizedBox(width: 10),
                 Container(
                   decoration: BoxDecoration(
-                    color: _isStreaming ? AppColors.urgent : AppColors.primary,
+                    color: (_isStreaming || _ragSearching)
+                        ? AppColors.urgent
+                        : AppColors.primary,
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: (_isStreaming ? AppColors.urgent : AppColors.primary).withValues(alpha: 0.3),
+                        color: (_isStreaming || _ragSearching ? AppColors.urgent : AppColors.primary).withValues(alpha: 0.3),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -791,12 +846,15 @@ class _ChatPanelContentState extends State<_ChatPanelContent> {
                   ),
                   child: IconButton(
                     icon: Icon(
-                      _isStreaming ? Icons.stop_rounded : Icons.arrow_upward,
+                      (_isStreaming || _ragSearching)
+                          ? Icons.stop_rounded
+                          : Icons.arrow_upward,
                       color: AppColors.textOnPrimary,
                       size: 22,
                     ),
-                    onPressed: _isStreaming ? _pauseGeneration : _sendMessage,
-                    tooltip: _isStreaming ? 'Pause' : 'Send',
+                    onPressed:
+                        (_isStreaming || _ragSearching) ? _pauseGeneration : _sendMessage,
+                    tooltip: (_isStreaming || _ragSearching) ? 'Pause' : 'Send',
                   ),
                 ),
               ],
@@ -804,6 +862,175 @@ class _ChatPanelContentState extends State<_ChatPanelContent> {
           ),
         ),
       ],
+    );
+  }
+
+  int? get _highlightedIndex {
+    final id = _highlightedId;
+    if (id == null) return null;
+    final i = _messages.indexWhere((m) => m.id == id);
+    return i >= 0 ? i : null;
+  }
+
+  void _openNoteEditorFor(ChatMessage message) {
+    final index = _messages.indexOf(message);
+    if (index >= 0) _openNoteEditorAt(index);
+  }
+
+  Widget _buildSegmentedControl() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: _segmentChip('Notes', _kPageNotes, Icons.sticky_note_2_outlined),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: _segmentChip('Chat', _kPageChat, Icons.chat_bubble_outline),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: _segmentChip('Index', _kPageIndex, Icons.format_list_numbered),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _segmentChip(String label, int page, IconData icon) {
+    final selected = _pageIndex == page;
+    return GestureDetector(
+      onTap: () => _pageController.animateToPage(
+        page,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      ),
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.border,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: selected ? AppColors.textOnPrimary : AppColors.textSecondary,
+            ),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? AppColors.textOnPrimary : AppColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChatList() {
+    if (_messages.isEmpty && !_isLoading && !_ragSearching) {
+      return SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryContainer,
+                  borderRadius: BorderRadius.circular(32),
+                ),
+                child: Icon(Icons.chat_bubble_outline, color: AppColors.primary, size: 32),
+              ),
+              const SizedBox(height: 16),
+              Text('Ask anything about this node',
+                  style: TextStyle(color: AppColors.textTertiary, fontSize: 15)),
+              const SizedBox(height: 6),
+              Text('Start a conversation with AI',
+                  style: TextStyle(color: AppColors.textQuaternary, fontSize: 13)),
+            ],
+          ),
+        ),
+      );
+    }
+    return ListView(
+      controller: _scrollController,
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      children: [
+        for (var i = 0; i < _messages.length; i++) _buildMessageItem(i),
+        if (_ragSearching)
+          WebSearchAnimation(
+            query: _ragQuery,
+            stage: _ragStage,
+            message: _ragStageMessage,
+            attempt: _ragAttempt,
+            onStop: _pauseGeneration,
+          ),
+        if (_isLoading)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildMessageItem(int index) {
+    final m = _messages[index];
+    final key = _messageKeys.putIfAbsent(m.id, () => GlobalKey());
+    final highlighted = m.id == _highlightedId;
+    return KeyedSubtree(
+      key: key,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: highlighted
+              ? Border.all(color: AppColors.primary, width: 2)
+              : null,
+        ),
+        child: MessageBubble(
+          message: m,
+          isStreaming: _isStreaming &&
+              index == _messages.length - 1 &&
+              m.role == MessageRole.assistant,
+          onCopy: () => _copyMessage(m.content),
+          onDelete: () => _deleteMessage(index),
+          onEditNote: m.role == MessageRole.assistant
+              ? () => _openNoteEditorAt(index)
+              : null,
+        ),
+      ),
     );
   }
 

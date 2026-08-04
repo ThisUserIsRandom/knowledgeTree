@@ -52,6 +52,12 @@
 #        STATIC_DEPS=true pip install lxml
 #        CFLAGS="-Wno-error=incompatible-function-pointer-types -O0" pip install lxml
 #
+#   The RAG pipeline (rag/) needs NO browser: DuckDuckGo search uses `ddgs`,
+#   page crawling uses only the stdlib `urllib` + `html.parser`, and retrieval
+#   uses a self-contained BM25 (rag/index.py) + dependency-free semantic hashing
+#   (rag/embed.py). There is no crawl4ai/Playwright and no rank-bm25 to build.
+#   The remaining RAG deps are pure-Python: `ddgs`, `pypdf`, `python-docx`.
+#
 # Usage:
 #   ./setup.sh [requirements.txt]
 #   ALLOW_RUST_INSTALL=1 ./setup.sh        # auto-install rust on Termux
@@ -360,6 +366,6 @@ fi
 "$VENV_PY" -m pip uninstall -y tiktoken tiktoken_ext >/dev/null 2>&1 || true
 
 log "Verifying imports"
-"$VENV_PY" -c 'import flask, langchain_core, langgraph, lxml.etree, docx; print("langchain stack + lxml/docx imports OK")'
+"$VENV_PY" -c 'import flask, langchain_core, langgraph, lxml.etree, docx, ddgs; print("langchain stack + lxml/docx/ddgs imports OK")'
 
 printf '\033[1;32m\nSetup complete. Activate with:\n    source %s/bin/activate\n\033[0m' "$VENV_DIR"

@@ -32,6 +32,16 @@ class RagSearchResult {
 }
 
 class RagApiService {
+  HttpClient? _activeClient;
+  bool _cancelled = false;
+
+  /// Stop an in-progress RAG pipeline. Closes the SSE connection so the
+  /// backend stops crawling/searching; already-streamed stages are kept.
+  void cancel() {
+    _cancelled = true;
+    _activeClient?.close(force: true);
+  }
+
   String _normalize(String url) {
     var base = url.trim();
     if (base.endsWith('/')) base = base.substring(0, base.length - 1);
@@ -52,7 +62,9 @@ class RagApiService {
     String? apiKey,
     void Function(RagStageEvent stage)? onStage,
   }) async {
+    _cancelled = false;
     final client = HttpClient();
+    _activeClient = client;
     client.connectionTimeout = const Duration(seconds: 15);
     RagSearchResult result = const RagSearchResult();
 
@@ -67,7 +79,7 @@ class RagApiService {
         'query': ContentSanitizer.sanitize(query),
         'mode': mode,
         'model': model,
-        'max_loops': 3,
+        'max_loops': 2,
       });
       final bytes = utf8.encode(body);
       request.contentLength = bytes.length;
@@ -83,6 +95,7 @@ class RagApiService {
       final decoder = const Utf8Decoder(allowMalformed: true);
       String buffer = '';
       await for (final chunk in response.transform(decoder)) {
+        if (_cancelled) break;
         buffer += chunk;
         while (true) {
           final nl = buffer.indexOf('\n');
@@ -97,7 +110,7 @@ class RagApiService {
           }
         }
       }
-      if (buffer.trim().isNotEmpty) {
+      if (!_cancelled && buffer.trim().isNotEmpty) {
         final rawLine = buffer.trim();
         if (rawLine.startsWith('data: ')) {
           final data = rawLine.substring(6).trim();
@@ -107,15 +120,25 @@ class RagApiService {
         }
       }
       client.close();
+      _activeClient = null;
+      if (_cancelled) {
+        return RagSearchResult(error: 'Search stopped');
+      }
       return result;
     } on SocketException catch (e) {
       client.close();
+      _activeClient = null;
+      if (_cancelled) return RagSearchResult(error: 'Search stopped');
       return RagSearchResult(error: 'Connection failed: ${e.message}');
     } on TimeoutException {
       client.close();
+      _activeClient = null;
+      if (_cancelled) return RagSearchResult(error: 'Search stopped');
       return RagSearchResult(error: 'Request timed out');
     } catch (e) {
       client.close();
+      _activeClient = null;
+      if (_cancelled) return RagSearchResult(error: 'Search stopped');
       return RagSearchResult(error: 'Error: $e');
     }
   }

@@ -72,6 +72,11 @@ class ContentSanitizer {
     return result;
   }
 
+  /// Recursively sanitizes a decoded JSON structure (maps, lists, strings),
+  /// leaving non-string values (numbers, booleans) untouched. Base64 payloads
+  /// only contain safe printable characters, so images survive as-is.
+  static dynamic sanitizeJson(dynamic value) => _sanitizeValue(value);
+
   static dynamic _sanitizeValue(dynamic value) {
     if (value is String) return sanitize(value);
     if (value is Map<String, dynamic>) return _sanitizeMap(value);

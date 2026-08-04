@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:knowledgetree/core/theme/colors.dart';
 import 'package:knowledgetree/features/chat/domain/models/chat_message.dart';
+import 'note_view.dart';
 
 class MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isStreaming;
   final VoidCallback? onCopy;
   final VoidCallback? onDelete;
+  final VoidCallback? onEditNote;
 
   const MessageBubble({
     super.key,
@@ -15,6 +17,7 @@ class MessageBubble extends StatelessWidget {
     this.isStreaming = false,
     this.onCopy,
     this.onDelete,
+    this.onEditNote,
   });
 
   @override
@@ -30,19 +33,15 @@ class MessageBubble extends StatelessWidget {
         children: [
           if (!isUser) _avatar(isUser),
           Flexible(
-            child: Stack(
+            child: Column(
+              crossAxisAlignment:
+                  isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
                 Container(
                   constraints: BoxConstraints(
                     maxWidth: MediaQuery.of(context).size.width * 0.78,
-                    minHeight: showActions ? 80 : 0,
                   ),
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    12,
-                    showActions ? 48 : 16,
-                    12,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                   decoration: BoxDecoration(
                     color: isUser ? AppColors.chatUserBubble : AppColors.chatAiBubble,
                     borderRadius: BorderRadius.circular(16).copyWith(
@@ -57,13 +56,18 @@ class MessageBubble extends StatelessWidget {
                       ),
                     ],
                   ),
-                  child: isUser
-                      ? SelectableText(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (isUser)
+                        SelectableText(
                           message.content,
                           style: TextStyle(
                               color: AppColors.chatUserText, fontSize: 14.5, height: 1.5),
                         )
-                      : SelectionArea(
+                      else
+                        SelectionArea(
                           child: MarkdownBody(
                             data: message.content + (isStreaming ? ' ▌' : ''),
                             styleSheet: MarkdownStyleSheet(
@@ -98,32 +102,11 @@ class MessageBubble extends StatelessWidget {
                             ),
                           ),
                         ),
-                ),
-                if (showActions)
-                  Positioned(
-                    right: 4,
-                    top: 4,
-                    bottom: 4,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (onCopy != null) ...[
-                          _actionButton(
-                            icon: Icons.copy_rounded,
-                            tooltip: 'Copy',
-                            onPressed: onCopy,
-                          ),
-                          const SizedBox(height: 4),
-                        ],
-                        _actionButton(
-                          icon: Icons.delete_outline_rounded,
-                          tooltip: 'Delete',
-                          onPressed: onDelete,
-                          color: AppColors.urgent,
-                        ),
-                      ],
-                    ),
+                      if (message.hasNote) _noteBlock(),
+                    ],
                   ),
+                ),
+                if (showActions) _actionRow(),
               ],
             ),
           ),
@@ -131,6 +114,44 @@ class MessageBubble extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _actionRow() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (onEditNote != null) ...[
+            _actionButton(
+              icon: Icons.sticky_note_2_rounded,
+              tooltip: 'Add / edit note',
+              onPressed: onEditNote,
+              color: AppColors.primary,
+            ),
+            const SizedBox(width: 4),
+          ],
+          if (onCopy != null) ...[
+            _actionButton(
+              icon: Icons.copy_rounded,
+              tooltip: 'Copy',
+              onPressed: onCopy,
+            ),
+            const SizedBox(width: 4),
+          ],
+          _actionButton(
+            icon: Icons.delete_outline_rounded,
+            tooltip: 'Delete',
+            onPressed: onDelete,
+            color: AppColors.urgent,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _noteBlock() {
+    return NoteView(note: message.note!);
   }
 
   Widget _actionButton({
@@ -147,13 +168,13 @@ class MessageBubble extends StatelessWidget {
           onTap: onPressed,
           borderRadius: BorderRadius.circular(8),
             child: Container(
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              padding: const EdgeInsets.all(6),
+              constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+              padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
-              color: (color ?? AppColors.textQuaternary).withValues(alpha: 0.1),
+              color: (color ?? AppColors.textQuaternary).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, size: 16, color: color ?? AppColors.textQuaternary),
+            child: Icon(icon, size: 15, color: color ?? AppColors.textQuaternary),
           ),
         ),
       ),

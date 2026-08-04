@@ -22,7 +22,9 @@ class TreeTransfer {
   /// Current export schema version. Bumped when the payload shape changes so
   /// [importFromJson] can migrate older files.
   /// Version 2 added per-node chat history under each node's `chat` field.
-  static const int formatVersion = 2;
+  /// Version 3 added an optional per-message `note` ({text, images[]}) object
+  /// for personal notes attached to AI answers. Version 2 files still import.
+  static const int formatVersion = 3;
 
   static const MethodChannel _downloads =
       MethodChannel('knowledgetree/downloads');
@@ -128,7 +130,7 @@ class TreeTransfer {
       throw const FormatException('Invalid tree file: no project data found.');
     }
 
-    final chatsToSave = <String, List<Map<String, String>>>{};
+    final chatsToSave = <String, List<Map<String, dynamic>>>{};
     final roots = _buildNodes(
       (projectJson['roots'] as List?) ?? [],
       regenerateIds,
@@ -161,7 +163,7 @@ class TreeTransfer {
   static List<KnowledgeNode> _buildNodes(
     List<dynamic> nodesJson,
     bool regenerateIds,
-    Map<String, List<Map<String, String>>> chatsToSave,
+    Map<String, List<Map<String, dynamic>>> chatsToSave,
   ) {
     return nodesJson.map((e) {
       final m = e as Map<String, dynamic>;
@@ -171,12 +173,16 @@ class TreeTransfer {
 
       final rawChat = m['chat'] as List?;
       final chat = rawChat
-              ?.map((c) => {
-                    'role': (c['role'] as String?) ?? '',
-                    'content': (c['content'] as String?) ?? '',
-                  })
+              ?.map((c) {
+                final cm = c as Map<String, dynamic>;
+                return {
+                  'role': (cm['role'] as String?) ?? '',
+                  'content': (cm['content'] as String?) ?? '',
+                  if (cm['note'] is Map) 'note': cm['note'],
+                };
+              })
               .toList() ??
-          <Map<String, String>>[];
+          <Map<String, dynamic>>[];
       chatsToSave[id] = chat;
 
       final children = _buildNodes(

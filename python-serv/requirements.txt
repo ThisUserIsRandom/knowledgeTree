@@ -9,9 +9,10 @@ langgraph==1.2.9
 # and `./tiktoken` shims in this directory are used instead.
 #   pip uninstall -y uuid-utils tiktoken tiktoken_ext
 
-# RAG (web search + retrieval). crawl4ai is optional — the pipeline falls back
-# to a stdlib HTML->text crawler when it (and its Playwright browsers) is absent.
+# RAG (web search + retrieval). No browser is required: DuckDuckGo search uses
+# `ddgs`, pages are crawled with the stdlib urllib + html.parser, and BM25 is
+# implemented in-repo (`rag.index.BM25`). `pypdf`/`python-docx` handle local
+# document uploads.
 ddgs
-rank-bm25
 pypdf
 python-docx

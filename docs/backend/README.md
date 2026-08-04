@@ -6,15 +6,20 @@ client can talk to. Built on LangChain + LangGraph.
 
 ## Tech stack
 
-- **Flask** — HTTP server + blueprints (`/health`, chat, models, config).
+- **Flask** — HTTP server + blueprints (`/health`, chat, models, config, rag).
 - **LangChain** (`langchain-core`, `langchain-openai`) — chat model wrappers.
 - **LangGraph** (`langgraph`) — minimal `StateGraph` wrapping the model call.
+- **`ddgs`** — DuckDuckGo search for the RAG web-search pipeline.
+- **RAG retrieval** — a self-contained Okapi BM25 (`rag/index.py`) + lightweight
+  semantic features (`rag/embed.py`); pages are crawled with the **stdlib**
+  `urllib` + `html.parser` (`rag/web.py`) — no browser, no `crawl4ai`.
+- **`pypdf` / `python-docx`** — text extraction for uploaded PDF/DOCX files.
 - **`dart:io` on the client** consumes the SSE stream; the server just emits
   OpenAI-style `data: {...}` chunks.
 
 > `requirements.txt` is committed. Install it with `python-serv/setup.sh`
 > (see **Setup & running** below), or manually:
-> `pip install flask langchain-core langchain-openai langgraph`
+> `pip install -r requirements.txt`
 
 ## Project structure
 
@@ -28,7 +33,8 @@ python-serv/
 ├── routes/
 │   ├── chat.py          # POST /v1/chat/completions  (SSE streaming)
 │   ├── models.py        # GET  /v1/models
-│   └── config_routes.py # GET/POST /v1/config, /v1/config/reload, /v1/config/set
+│   ├── config_routes.py # GET/POST /v1/config, /v1/config/reload, /v1/config/set
+│   └── rag.py           # POST /v1/rag/search (SSE), upload/index/clear
 ├── providers/
 │   ├── base.py          # ChatProvider ABC (build_model)
 │   ├── factory.py       # api_type → provider instance
@@ -36,6 +42,12 @@ python-serv/
 │   └── openai_compatible.py  # OpenAICompatibleProvider, OpenRouterProvider
 ├── graph/
 │   └── chat_graph.py    # LangGraph StateGraph + stream_chat / invoke_chat
+├── rag/
+│   ├── pipeline.py      # RAG generator: search -> crawl -> index -> retrieve -> generate
+│   ├── web.py           # DuckDuckGo search + stdlib HTML->markdown crawler
+│   ├── index.py         # hierarchical chunking + self-contained BM25
+│   ├── embed.py         # dependency-free semantic features (token + n-gram hashing)
+│   └── paths.py         # data/rag/{uploaded,web} directories
 ├── uuid_utils/          # pure-Python shim for the Rust uuid-utils (see Termux)
 │   └── compat/          # provides uuid7/uuid6 used by langchain-core
 ├── tiktoken/            # pure-Python shim shadowing the Rust tiktoken
@@ -69,6 +81,42 @@ upstream provider's model list (Ollama `/api/tags` or `/v1/models`).
 - `POST /v1/config/reload` — re-reads `config.json` + env.
 - `POST /v1/config/set` — live update of `api_type`/`base_url`/`api_key`/`model`
   from the client's Connector (re-routes subsequent requests immediately).
+
+### RAG endpoints (`/v1/rag/*`)
+Used by the chat panel's web search. The pipeline generator
+(`rag/pipeline.py::run_rag_pipeline`) runs:
+**DuckDuckGo search → concurrent crawl → hierarchical+BM25 index → retrieve →
+LLM generate → (retry if insufficient)** and streams every step as SSE.
+
+- `POST /v1/rag/search` — body `{query, mode: "web"|"local", max_loops, model}`.
+  Streams `data: {…}` events:
+  - `stage` — `searching` / `crawling` / `indexing` / `retrieving` / `generating`
+    (each with `message` + `attempt`).
+  - `retry` — context wasn't useful; a broader query is tried next.
+  - `done` — `{response, attempts, mode, sources}`.
+  - `error` — pipeline/LLM failure.
+  `mode=web` searches + crawls; `mode=local` only searches uploaded documents.
+  An `Authorization: Bearer <key>` header overrides the configured `api_key`
+  for the answer-generation call.
+- `POST /v1/rag/upload` — multipart `files[]`; stores documents for `mode=local`.
+- `GET  /v1/rag/index` — status `{uploaded_files, web_files, chunks}`.
+- `DELETE /v1/rag/index` — clears crawled + uploaded files.
+
+> **Crawl behaviour** (`rag/web.py`): pages are fetched concurrently
+> (`MAX_CONCURRENT=8`, time-boxed), oversized/near-duplicate bodies are dropped,
+> and per-page failures never abort the run. HTML is converted to clean markdown
+> with a stdlib `html.parser` that keeps headings/lists/links and drops nav/
+> branding subtrees — no browser is required. The web dir is cleared only on the
+> first retry attempt, so retries add new pages instead of re-crawling. A hard
+> **LLM failure** (auth/network/model missing) is detected by the `LLM_ERROR:`
+> marker and stops the pipeline immediately instead of looping.
+
+### Retrieval (`rag/index.py`)
+Child chunks are ranked by a self-contained Okapi BM25 (`rag.index.BM25`,
+k1=1.5, b=0.7) blended with cosine similarity over dependency-free semantic
+features (`rag.embed.py`: hashed word tokens + character n-grams). Parent
+chunks aggregate their children's scores; the best parents become the LLM
+context.
 
 ## Configuration
 
@@ -112,8 +160,16 @@ headers. New providers are registered via `register_provider(api_type, cls)`.
 
 ```bash
 cd python-serv
+./setup.sh                           # creates ./env + installs requirements.txt
+cp config.example.json config.json   # set api_key / base_url / api_type
+./env/bin/python main.py             # http://0.0.0.0:8000
+```
+
+Or manually:
+
+```bash
 python -m venv env && source env/bin/activate
-pip install flask langchain-core langchain-openai langgraph
+pip install -r requirements.txt
 cp config.example.json config.json   # set api_key / base_url / api_type
 python main.py                       # http://0.0.0.0:8000
 ```

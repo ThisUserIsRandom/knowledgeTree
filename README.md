@@ -26,14 +26,21 @@ proj4/
 
 ```bash
 cd python-serv
-python -m venv env
-source env/bin/activate            # Windows: env\Scripts\activate
-pip install flask langchain-core langchain-openai langgraph
+./setup.sh                           # creates ./env + installs requirements.txt
 cp config.example.json config.json   # then set api_key / base_url / api_type
-python main.py                       # listens on http://0.0.0.0:8000
+./env/bin/python main.py             # listens on http://0.0.0.0:8000
 ```
 
+Or manually: `python -m venv env && source env/bin/activate` then
+`pip install -r requirements.txt`.
+
 Health check: `GET http://localhost:8000/health`.
+
+> The gateway also exposes an **RAG web-search endpoint** (`POST /v1/rag/search`)
+> used by the app's "Search the web" button. It searches DuckDuckGo via `ddgs`,
+> crawls result pages with the **stdlib** `urllib` + `html.parser` (no browser,
+> no `crawl4ai`), ranks content with a self-contained BM25, and streams stage
+> events + the final answer back as SSE.
 
 ### 2. Frontend (Flutter)
 
@@ -52,11 +59,13 @@ configured it is remembered via `shared_preferences` and the app opens into the
 ```
 Flutter (knowledgetree)  ──HTTP/SSE──▶  Flask (python-serv)  ──▶  Upstream LLM
    TreeView + ChatPanel            /v1/chat/completions            (Ollama/OpenRouter/…)
+                                   /v1/rag/search            ──▶  DuckDuckGo + crawler
 ```
 
 The backend exposes an OpenAI-compatible `/v1/chat/completions` endpoint and
 streams Server-Sent Events. The frontend renders the tree with the `graphview`
-package and opens a chat panel per node.
+package and opens a chat panel per node. The RAG endpoint powers the panel's
+web search (DuckDuckGo → crawl → BM25 index → LLM answer), all streamed as SSE.
 
 ## License
 

@@ -13,7 +13,7 @@ const Map<String, String> _kStageLabel = {
   'searching': 'Searching the web',
   'crawling': 'Crawling pages',
   'indexing': 'Building index',
-  'retrieving': 'Retrieving with BM25',
+  'retrieving': 'Ranking relevant context',
   'generating': 'Generating answer',
   'retry': 'Retrying',
 };
@@ -26,6 +26,7 @@ class WebSearchAnimation extends StatefulWidget {
   final String stage;
   final String message;
   final int attempt;
+  final VoidCallback? onStop;
 
   const WebSearchAnimation({
     super.key,
@@ -33,6 +34,7 @@ class WebSearchAnimation extends StatefulWidget {
     required this.stage,
     required this.message,
     required this.attempt,
+    this.onStop,
   });
 
   @override
@@ -141,6 +143,22 @@ class _WebSearchAnimationState extends State<WebSearchAnimation>
               style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
           ),
+          if (widget.onStop != null) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: widget.onStop,
+                icon: const Icon(Icons.stop_rounded, size: 16),
+                label: const Text('Stop search'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.urgent,
+                  side: const BorderSide(color: AppColors.urgent, width: 1),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

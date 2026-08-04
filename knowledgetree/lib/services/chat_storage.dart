@@ -20,7 +20,9 @@ class ChatStorage {
     return '$baseDir/$safe.json';
   }
 
-  static Future<List<Map<String, String>>> load(String nodeId) async {
+  /// Loads the persisted messages for [nodeId]. Each entry keeps `role`,
+  /// `content` (a String) and, when present, the optional `note` map.
+  static Future<List<Map<String, dynamic>>> load(String nodeId) async {
     try {
       final base = await _getBaseDir();
       final file = File(_filePath(nodeId, base));
@@ -34,6 +36,8 @@ class ChatStorage {
         return {
           'role': ContentSanitizer.sanitize(m['role']?.toString() ?? ''),
           'content': ContentSanitizer.sanitize(m['content']?.toString() ?? ''),
+          if (m['note'] is Map)
+            'note': ContentSanitizer.sanitizeJson(m['note']),
         };
       }).toList();
     } catch (e) {
@@ -42,12 +46,14 @@ class ChatStorage {
     }
   }
 
-  static Future<void> save(String nodeId, List<Map<String, String>> messages) async {
+  static Future<void> save(String nodeId, List<Map<String, dynamic>> messages) async {
     try {
       final base = await _getBaseDir();
       final safe = messages.map((m) => {
-        'role': ContentSanitizer.sanitize(m['role'] ?? ''),
-        'content': ContentSanitizer.sanitize(m['content'] ?? ''),
+        'role': ContentSanitizer.sanitize(m['role']?.toString() ?? ''),
+        'content': ContentSanitizer.sanitize(m['content']?.toString() ?? ''),
+        if (m['note'] is Map)
+          'note': ContentSanitizer.sanitizeJson(m['note']),
       }).toList();
       final json = jsonEncode(safe);
       await File(_filePath(nodeId, base)).writeAsString(json);
